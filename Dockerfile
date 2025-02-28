@@ -1,89 +1,55 @@
+# Use an official Ubuntu base image
 FROM ubuntu:22.04
 
-# Prevent interactive dialogs during package installation
+# Set environment variables
 ENV DEBIAN_FRONTEND=noninteractive
 
-# Install required packages
+# Install dependencies
 RUN apt-get update && apt-get install -y \
     curl \
     gnupg \
-    sudo \
-    lsb-release \
-    wget \
-    ca-certificates \
-    apt-transport-https \
-    software-properties-common
+    software-properties-common \
+    fuse \
+    rclone \
+    systemd \
+    && apt-get clean
 
-# Add Jellyfin repository
+# Add Jellyfin repository and install Jellyfin
 RUN curl -fsSL https://repo.jellyfin.org/ubuntu/jellyfin_team.gpg.key | gpg --dearmor -o /etc/apt/trusted.gpg.d/jellyfin.gpg && \
-    echo "deb [arch=$(dpkg --print-architecture)] https://repo.jellyfin.org/ubuntu $(lsb_release -c -s) main" > /etc/apt/sources.list.d/jellyfin.list
+    echo "deb [arch=$(dpkg --print-architecture)] https://repo.jellyfin.org/ubuntu $(lsb_release -c -s) main" | tee /etc/apt/sources.list.d/jellyfin.list && \
+    apt-get update && apt-get install -y jellyfin
 
-# Update and install Jellyfin
-RUN apt-get update && \
-    apt-get install -y jellyfin
+# Create mount directory for Google Drive
+RUN mkdir -p /mnt/gdrive
 
-# Install rclone
-RUN curl -O https://downloads.rclone.org/rclone-current-linux-amd64.deb && \
-    dpkg -i rclone-current-linux-amd64.deb && \
-    rm rclone-current-linux-amd64.deb
+# Copy rclone configuration file
+COPY rclone.conf /root/.config/rclone/rclone.conf
 
-# Create media directories
-RUN mkdir -p /media/gdrive
-
-# Setup rclone configuration
-RUN mkdir -p /root/.config/rclone
-COPY rclone.conf /root/.config/rclone/
-
-# Create custom startup script
-RUN echo '#!/bin/bash\n\
-# Verify rclone config\n\
-export RCLONE_CONFIG=/root/.config/rclone/rclone.conf\n\
-echo "Verifying rclone configuration..."\n\
-if rclone lsf jellyfin: > /dev/null 2>&1; then\n\
-    echo "Successfully connected to Google Drive!"\n\
-else\n\
-    echo "Error connecting to Google Drive. Check your rclone configuration."\n\
-    echo "Available remotes:"\n\
-    rclone listremotes\n\
-    echo "rclone.conf content:"\n\
-    cat $RCLONE_CONFIG\n\
-fi\n\
+# Add systemd service for rclone
+RUN echo "[Unit]\n\
+Description=Rclone Mount Google Drive\n\
+After=network-online.target\n\
+Wants=network-online.target\n\
 \n\
-# Create Jellyfin configuration\n\
-mkdir -p /var/lib/jellyfin/config\n\
+[Service]\n\
+Type=simple\n\
+ExecStart=/usr/bin/rclone mount jellyfin: /mnt/gdrive \\\n\
+    --config=/root/.config/rclone/rclone.conf \\\n\
+    --allow-other \\\n\
+    --vfs-cache-mode writes\n\
+ExecStop=/bin/fusermount -u /mnt/gdrive\n\
+Restart=always\n\
+User=root\n\
+Group=root\n\
 \n\
-# Add Google Drive as media library via path substitution\n\
-cat > /var/lib/jellyfin/config/system.xml << EOF\n\
-<?xml version="1.0"?>\n\
-<ServerConfiguration xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xmlns:xsd="http://www.w3.org/2001/XMLSchema">\n\
-  <EnableUPnP>false</EnableUPnP>\n\
-  <PublicPort>8096</PublicPort>\n\
-  <PublicHttpsPort>8920</PublicHttpsPort>\n\
-  <HttpServerPortNumber>8096</HttpServerPortNumber>\n\
-  <HttpsPortNumber>8920</HttpsPortNumber>\n\
-  <EnableHttps>false</EnableHttps>\n\
-  <IsStartupWizardCompleted>true</IsStartupWizardCompleted>\n\
-  <PathSubstitutions>\n\
-    <PathSubstitution>\n\
-      <From>gdrive://</From>\n\
-      <To>rclone://jellyfin:</To>\n\
-    </PathSubstitution>\n\
-  </PathSubstitutions>\n\
-</ServerConfiguration>\n\
-EOF\n\
-\n\
-# Set correct permissions\n\
-chown -R jellyfin:jellyfin /var/lib/jellyfin\n\
-\n\
-# Start Jellyfin\n\
-echo "Starting Jellyfin..."\n\
-sudo -u jellyfin /usr/bin/jellyfin --webdir=/usr/share/jellyfin/web\n\
-' > /start.sh
+[Install]\n\
+WantedBy=multi-user.target" > /etc/systemd/system/rclone-gdrive.service
 
-RUN chmod +x /start.sh
+# Enable and start the rclone service
+RUN systemctl enable rclone-gdrive
 
-# Expose Jellyfin port
+# Expose Jellyfin default port
 EXPOSE 8096
 
-# Start services
-CMD ["/start.sh"]
+# Start Jellyfin and rclone services
+CMD ["bash", "-c", "systemctl start rclone-gdrive && jellyfin"]
