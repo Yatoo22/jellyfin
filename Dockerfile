@@ -1,4 +1,5 @@
-FROM ubuntu:latest
+# Use Ubuntu 22.04 (LTS) instead of the latest version
+FROM ubuntu:22.04
 
 # Set non-interactive mode to prevent prompts
 ENV DEBIAN_FRONTEND=noninteractive
@@ -10,12 +11,11 @@ RUN apt update && apt install -y \
     software-properties-common \
     rclone \
     fuse \
-    jellyfin \
     && rm -rf /var/lib/apt/lists/*
 
-# Add Jellyfin repository
+# Add Jellyfin repository manually (Ubuntu 22.04)
 RUN curl -fsSL https://repo.jellyfin.org/ubuntu/jellyfin_team.gpg.key | gpg --dearmor -o /etc/apt/trusted.gpg.d/jellyfin.gpg \
-    && echo "deb [arch=$(dpkg --print-architecture)] https://repo.jellyfin.org/ubuntu $(lsb_release -c -s) main" | tee /etc/apt/sources.list.d/jellyfin.list \
+    && echo "deb [arch=$(dpkg --print-architecture)] https://repo.jellyfin.org/ubuntu jammy main" | tee /etc/apt/sources.list.d/jellyfin.list \
     && apt update && apt install -y jellyfin \
     && rm -rf /var/lib/apt/lists/*
 
