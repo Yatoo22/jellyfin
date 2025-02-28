@@ -15,8 +15,13 @@ RUN apt-get update && apt-get install -y \
     apt-get update && apt-get install -y jellyfin && \
     apt-get clean
 
-# Install rclone from its official source
-RUN curl https://rclone.org/install.sh | bash
+# Manually download and install rclone
+RUN curl -O https://downloads.rclone.org/rclone-current-linux-amd64.zip && \
+    unzip rclone-current-linux-amd64.zip && \
+    cd rclone-*-linux-amd64 && \
+    cp rclone /usr/bin/ && \
+    chmod +x /usr/bin/rclone && \
+    rm -rf rclone-current-linux-amd64.zip rclone-*-linux-amd64
 
 # Create mount directory for Google Drive
 RUN mkdir -p /mnt/gdrive
