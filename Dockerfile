@@ -4,15 +4,19 @@ FROM ubuntu:22.04
 # Set environment variables
 ENV DEBIAN_FRONTEND=noninteractive
 
-# Install dependencies
+# Install dependencies and add Jellyfin repository
 RUN apt-get update && apt-get install -y \
     curl \
     gnupg \
     software-properties-common \
-    fuse \
-    rclone \
-    jellyfin \
-    && apt-get clean
+    fuse && \
+    curl -fsSL https://repo.jellyfin.org/ubuntu/jellyfin_team.gpg.key | gpg --dearmor -o /usr/share/keyrings/jellyfin.gpg && \
+    echo "deb [signed-by=/usr/share/keyrings/jellyfin.gpg arch=$(dpkg --print-architecture)] https://repo.jellyfin.org/ubuntu $(lsb_release -cs) main" > /etc/apt/sources.list.d/jellyfin.list && \
+    apt-get update && apt-get install -y jellyfin && \
+    apt-get clean
+
+# Install rclone from its official source
+RUN curl https://rclone.org/install.sh | bash
 
 # Create mount directory for Google Drive
 RUN mkdir -p /mnt/gdrive
