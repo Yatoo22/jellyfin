@@ -22,5 +22,4 @@ RUN mkdir -p /mnt/gdrive /root/.config/rclone
 # Expose Jellyfin port
 EXPOSE 8096
 
-# Run Jellyfin and Rclone Mount
-CMD ["/bin/bash", "-c", "cp /rclone.conf /root/.config/rclone/rclone.conf && rclone mount jellyfin: /mnt/gdrive --config=/root/.config/rclone/rclone.conf --allow-other --vfs-cache-mode writes --daemon && systemctl start jellyfin && tail -f /dev/null"]
+CMD ["/bin/bash", "-c", "rclone mount jellyfin: /mnt/gdrive --config=/root/.config/rclone/rclone.conf --allow-other --vfs-cache-mode writes --daemon && systemctl start jellyfin && tail -f /dev/null"]
