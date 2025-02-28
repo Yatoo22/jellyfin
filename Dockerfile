@@ -27,33 +27,35 @@ RUN curl -O https://downloads.rclone.org/rclone-current-linux-amd64.deb && \
 # Create Google Drive mount point
 RUN mkdir -p /mnt/gdrive
 
-# Add a non-root user for running services
-RUN useradd -m -s /bin/bash media-user
-RUN usermod -aG sudo media-user
-
-# Setup rclone configuration
-RUN mkdir -p /home/media-user/.config/rclone
-COPY rclone.conf /home/media-user/.config/rclone/
-RUN chown -R media-user:media-user /home/media-user/.config
-RUN chown -R media-user:media-user /mnt/gdrive
+# Setup rclone configuration in root's home directory
+# since the container seems to run as root
+RUN mkdir -p /root/.config/rclone
+COPY rclone.conf /root/.config/rclone/
 
 # Create startup script
 RUN echo '#!/bin/bash\n\
 # Mount Google Drive\n\
 echo "Mounting Google Drive..."\n\
+export RCLONE_CONFIG=/root/.config/rclone/rclone.conf\n\
+rclone listremotes\n\
 rclone mount jellyfin: /mnt/gdrive --daemon --allow-other --vfs-cache-mode writes\n\
 \n\
 # Check if mount was successful\n\
-sleep 2\n\
+sleep 5\n\
 if mountpoint -q /mnt/gdrive; then\n\
     echo "Google Drive mounted successfully."\n\
 else\n\
     echo "Warning: Failed to mount Google Drive. Check rclone configuration."\n\
+    echo "Available remotes:"\n\
+    rclone listremotes\n\
+    echo "rclone.conf content:"\n\
+    cat /root/.config/rclone/rclone.conf\n\
 fi\n\
 \n\
-# Start Jellyfin\n\
+# Start Jellyfin directly instead of as a service\n\
 echo "Starting Jellyfin..."\n\
-service jellyfin start\n\
+mkdir -p /var/log/jellyfin\n\
+/usr/bin/jellyfin --datadir /var/lib/jellyfin --cachedir /var/cache/jellyfin --logdir /var/log/jellyfin &\n\
 \n\
 # Keep container running\n\
 echo "Services started. Container is now running..."\n\
