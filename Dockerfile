@@ -8,69 +8,76 @@ RUN apt-get update && apt-get install -y \
     curl \
     gnupg \
     sudo \
-    fuse \
     lsb-release \
-    nano \
     wget \
     ca-certificates \
-    procps
+    apt-transport-https \
+    software-properties-common
 
-# Add Jellyfin repository and install Jellyfin with proper web content
+# Add Jellyfin repository
 RUN curl -fsSL https://repo.jellyfin.org/ubuntu/jellyfin_team.gpg.key | gpg --dearmor -o /etc/apt/trusted.gpg.d/jellyfin.gpg && \
-    echo "deb [arch=$(dpkg --print-architecture)] https://repo.jellyfin.org/ubuntu $(lsb_release -c -s) main" > /etc/apt/sources.list.d/jellyfin.list && \
-    apt-get update && \
-    apt-get install -y jellyfin jellyfin-web
+    echo "deb [arch=$(dpkg --print-architecture)] https://repo.jellyfin.org/ubuntu $(lsb_release -c -s) main" > /etc/apt/sources.list.d/jellyfin.list
+
+# Update and install Jellyfin
+RUN apt-get update && \
+    apt-get install -y jellyfin
 
 # Install rclone
 RUN curl -O https://downloads.rclone.org/rclone-current-linux-amd64.deb && \
     dpkg -i rclone-current-linux-amd64.deb && \
     rm rclone-current-linux-amd64.deb
 
-# Create Google Drive mount point
-RUN mkdir -p /mnt/gdrive
+# Create media directories
+RUN mkdir -p /media/gdrive
 
-# Setup rclone configuration in root's home directory
+# Setup rclone configuration
 RUN mkdir -p /root/.config/rclone
 COPY rclone.conf /root/.config/rclone/
 
-# Create startup script with improved mount handling
+# Create custom startup script
 RUN echo '#!/bin/bash\n\
-# Set full permissions for FUSE\n\
-modprobe fuse || echo "Failed to load FUSE module - might need privileged container"\n\
-\n\
-# Mount Google Drive without daemon mode\n\
-echo "Mounting Google Drive..."\n\
+# Verify rclone config\n\
 export RCLONE_CONFIG=/root/.config/rclone/rclone.conf\n\
-mkdir -p /mnt/gdrive\n\
-\n\
-# Start rclone mount in background but not as daemon\n\
-rclone mount jellyfin: /mnt/gdrive --allow-other --vfs-cache-mode writes &\n\
-RCLONE_PID=$!\n\
-\n\
-# Give it a moment to mount\n\
-sleep 3\n\
-\n\
-# Check if mount was successful\n\
-if mountpoint -q /mnt/gdrive || ls -la /mnt/gdrive; then\n\
-    echo "Google Drive mounted successfully."\n\
+echo "Verifying rclone configuration..."\n\
+if rclone lsf jellyfin: > /dev/null 2>&1; then\n\
+    echo "Successfully connected to Google Drive!"\n\
 else\n\
-    echo "Warning: Failed to mount Google Drive. Check rclone configuration."\n\
+    echo "Error connecting to Google Drive. Check your rclone configuration."\n\
     echo "Available remotes:"\n\
     rclone listremotes\n\
     echo "rclone.conf content:"\n\
-    cat /root/.config/rclone/rclone.conf\n\
-    echo "Starting Jellyfin anyway..."\n\
+    cat $RCLONE_CONFIG\n\
 fi\n\
+\n\
+# Create Jellyfin configuration\n\
+mkdir -p /var/lib/jellyfin/config\n\
+\n\
+# Add Google Drive as media library via path substitution\n\
+cat > /var/lib/jellyfin/config/system.xml << EOF\n\
+<?xml version="1.0"?>\n\
+<ServerConfiguration xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xmlns:xsd="http://www.w3.org/2001/XMLSchema">\n\
+  <EnableUPnP>false</EnableUPnP>\n\
+  <PublicPort>8096</PublicPort>\n\
+  <PublicHttpsPort>8920</PublicHttpsPort>\n\
+  <HttpServerPortNumber>8096</HttpServerPortNumber>\n\
+  <HttpsPortNumber>8920</HttpsPortNumber>\n\
+  <EnableHttps>false</EnableHttps>\n\
+  <IsStartupWizardCompleted>true</IsStartupWizardCompleted>\n\
+  <PathSubstitutions>\n\
+    <PathSubstitution>\n\
+      <From>gdrive://</From>\n\
+      <To>rclone://jellyfin:</To>\n\
+    </PathSubstitution>\n\
+  </PathSubstitutions>\n\
+</ServerConfiguration>\n\
+EOF\n\
+\n\
+# Set correct permissions\n\
+chown -R jellyfin:jellyfin /var/lib/jellyfin\n\
 \n\
 # Start Jellyfin\n\
 echo "Starting Jellyfin..."\n\
-mkdir -p /var/log/jellyfin\n\
-/usr/bin/jellyfin --datadir /var/lib/jellyfin --cachedir /var/cache/jellyfin --logdir /var/log/jellyfin &\n\
-JELLYFIN_PID=$!\n\
-\n\
-# Monitor both processes\n\
-echo "Services started. Container is now running..."\n\
-wait $JELLYFIN_PID\n\
+sudo -u jellyfin /usr/bin/jellyfin --webdir=/usr/share/jellyfin/web\n\
 ' > /start.sh
 
 RUN chmod +x /start.sh
@@ -78,4 +85,5 @@ RUN chmod +x /start.sh
 # Expose Jellyfin port
 EXPOSE 8096
 
+# Start services
 CMD ["/start.sh"]
