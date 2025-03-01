@@ -1,13 +1,22 @@
-FROM jellyfin/jellyfin
+FROM ubuntu:latest
 
-# Install Rclone & FUSE
-RUN apt update && apt install -y rclone fuse
+# Install dependencies
+RUN apt update -y && apt install -y \
+    jellyfin \
+    rclone \
+    fuse \
+    wget \
+    unzip \
+    && rm -rf /var/lib/apt/lists/*
 
-# Copy Rclone config (replace with your actual config)
+# Copy Rclone config (Make sure you have this file in your repo)
 COPY rclone.conf /root/.config/rclone/rclone.conf
 
-# Create media folder
+# Create a media directory
 RUN mkdir -p /media/movies
 
-# Mount Google Drive & Start Jellyfin
-CMD rclone mount gdrive:/Movies /media/movies --daemon && jellyfin
+# Expose Jellyfin's default port
+EXPOSE 8096
+
+# Run Rclone mount and start Jellyfin
+CMD rclone mount jellyfin:/Movies /media/movies --daemon && jellyfin --no-auth
